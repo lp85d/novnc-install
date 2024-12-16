@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Kali Linux noVNC + TigerVNC + XFCE4 installation script
-# with optional Nginx reverse proxy and Let's Encrypt setup
+# optional Nginx reverse proxy and Let's Encrypt setup
 # https://github.com/vtstv/Install_Novnc_Kali
 # Install_Novnc_Kali v0.3 by Murr
 
@@ -10,14 +10,6 @@ if [ "$EUID" -ne 0 ]; then
   echo "This script must be run as root or with sudo privileges."
   exit 1
 fi
-
-function get_existing_novnc_port() {
-  if [ -f /etc/systemd/system/novnc.service ]; then
-    grep -oP 'listen \K\d+' /etc/systemd/system/novnc.service | head -n1
-  else
-    echo "6080"
-  fi
-}
 
 function install_vnc_novnc() {
   # Prompt user for required variables
@@ -34,10 +26,18 @@ function install_vnc_novnc() {
 
   echo "Enter the VNC password (at least 6 characters):"
   read -s VNC_PASSWORD
-  NOVNC_PORT=$(get_existing_novnc_port)
-  echo "Enter the noVNC port (default: $NOVNC_PORT):"
-  read USER_NOVNC_PORT
-  NOVNC_PORT=${USER_NOVNC_PORT:-$NOVNC_PORT}
+
+  # Check if noVNC is already installed and get the port
+  if systemctl is-active --quiet novnc; then
+    echo "noVNC is already installed."
+    NOVNC_PORT=$(systemctl show -p ExecStart --value novnc | awk -F'--listen ' '{print $2}' | awk '{print $1}')
+    echo "Using existing noVNC port: $NOVNC_PORT"
+  else
+    echo "Enter the noVNC port (default 6080):"
+    read NOVNC_PORT
+    NOVNC_PORT=${NOVNC_PORT:-6080}
+  fi
+  
 
   echo "Enter the VNC display number (default :1):"
   read VNC_DISPLAY
@@ -78,34 +78,36 @@ EOF"
   su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
   su - "$VNC_USER" -c "vncserver -kill $VNC_DISPLAY"
   su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
+  
+    # Install noVNC (only if not already installed)
+  if ! systemctl is-active --quiet novnc; then
+      echo "Installing noVNC..."
+      su - "$VNC_USER" -c "cd ~ && git clone https://github.com/novnc/noVNC.git"
+      su - "$VNC_USER" -c "cd ~/noVNC && git clone https://github.com/novnc/websockify.git"
 
-  # Install noVNC
-  echo "Installing noVNC..."
-  su - "$VNC_USER" -c "cd ~ && git clone https://github.com/novnc/noVNC.git"
-  su - "$VNC_USER" -c "cd ~/noVNC && git clone https://github.com/novnc/websockify.git"
+      # Create a systemd service for noVNC
+      echo "Creating noVNC systemd service..."
+      cat << EOF > /etc/systemd/system/novnc.service
+  [Unit]
+  Description=noVNC Server
+  After=network.target
 
-  # Create a systemd service for noVNC
-  echo "Creating noVNC systemd service..."
-  cat << EOF > /etc/systemd/system/novnc.service
-[Unit]
-Description=noVNC Server
-After=network.target
+  [Service]
+  Type=simple
+  ExecStart=/home/$VNC_USER/noVNC/utils/novnc_proxy --vnc localhost:$VNC_PORT --listen $NOVNC_PORT
+  Restart=always
+  User=$VNC_USER
 
-[Service]
-Type=simple
-ExecStart=/home/$VNC_USER/noVNC/utils/novnc_proxy --vnc localhost:$VNC_PORT --listen $NOVNC_PORT
-Restart=always
-User=$VNC_USER
+  [Install]
+  WantedBy=multi-user.target
+  EOF
 
-[Install]
-WantedBy=multi-user.target
-EOF
-
-  # Reload systemd and enable the service
-  echo "Enabling noVNC service..."
-  systemctl daemon-reload
-  systemctl enable novnc
-  systemctl start novnc
+      # Reload systemd and enable the service
+      echo "Enabling noVNC service..."
+      systemctl daemon-reload
+      systemctl enable novnc
+      systemctl start novnc
+  fi
 
   # Configure firewall
   echo "Configuring firewall rules..."
@@ -130,24 +132,40 @@ echo "http://$PUBLIC_IP:$NOVNC_PORT/vnc.html"
 }
 
 function configure_nginx_reverse_proxy() {
-  NOVNC_PORT=$(get_existing_novnc_port)
-  echo "Detected noVNC port: $NOVNC_PORT"
+  if [ -z "$NOVNC_PORT" ]; then
+    if systemctl is-active --quiet novnc; then
+      NOVNC_PORT=$(systemctl show -p ExecStart --value novnc | awk -F'--listen ' '{print $2}' | awk '{print $1}')
+      echo "Using existing noVNC port: $NOVNC_PORT"
+    else
+      echo "Error: noVNC port is not defined. Please install noVNC first or set NOVNC_PORT manually."
+      return 1
+    fi
+  fi
+
   echo "Installing Nginx..."
-  apt install -y nginx apache2-utils
+  apt install -y nginx
 
   echo "Enter the hostname for the reverse proxy (e.g., vnc.example.com):"
   read HOSTNAME
 
-  echo "Do you want to protect the proxy with basic HTTP authentication? (y/n):"
-  read USE_AUTH
-  if [ "$USE_AUTH" == "y" ]; then
-    echo "Enter username for HTTP authentication:"
+  echo "Do you want to enable HTTP Basic Authentication? (y/n):"
+  read ENABLE_BASIC_AUTH
+  ENABLE_BASIC_AUTH=${ENABLE_BASIC_AUTH:-n}
+
+  AUTH_CONFIG=""
+  if [[ "$ENABLE_BASIC_AUTH" == "y" ]]; then
+    echo "Enter the username for Basic Authentication:"
     read AUTH_USER
-    echo "Enter password for $AUTH_USER:"
-    htpasswd -c /etc/nginx/.novnc_htpasswd $AUTH_USER
-    AUTH_CONFIG="auth_basic \"Restricted Access\";\nauth_basic_user_file /etc/nginx/.novnc_htpasswd;"
-  else
-    AUTH_CONFIG=""
+    echo "Enter the password for Basic Authentication:"
+    read -s AUTH_PASSWORD
+
+    echo "Installing apache2-utils for htpasswd..."
+    apt install -y apache2-utils
+
+    htpasswd -bc /etc/nginx/.htpasswd "$AUTH_USER" "$AUTH_PASSWORD"
+    AUTH_CONFIG="
+        auth_basic \"Restricted\";
+        auth_basic_user_file /etc/nginx/.htpasswd;"
   fi
 
   echo "Configuring Nginx..."
@@ -155,6 +173,18 @@ function configure_nginx_reverse_proxy() {
 server {
     listen 80;
     server_name $HOSTNAME;
+
+    # Redirect HTTP to HTTPS
+    return 301 https://$HOSTNAME\$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name $HOSTNAME;
+
+    ssl_certificate /etc/letsencrypt/live/$HOSTNAME/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$HOSTNAME/privkey.pem;
+
     location / {
         $AUTH_CONFIG
         proxy_pass http://localhost:$NOVNC_PORT;
@@ -162,28 +192,78 @@ server {
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
-    }
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOF
 
-  ln -sf /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
+  if ! [ -L /etc/nginx/sites-enabled/novnc ]; then
+        ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
+  fi
+
   nginx -t && systemctl reload nginx
 
-  echo "Installing Certbot for Let's Encrypt..."
-  apt install -y certbot python3-certbot-nginx
+  if ! certbot certificates | grep -q "$HOSTNAME"; then
+        echo "Installing Certbot for Let's Encrypt..."
+        apt install -y certbot python3-certbot-nginx
 
-  echo "Obtaining SSL certificate..."
-  certbot --nginx -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME
+        echo "Obtaining SSL certificate..."
+        certbot --nginx -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME
+  else
+      echo "SSL certificate for $HOSTNAME already exists. Skipping Certbot installation."
+  fi
 
-  echo "Configuring HTTP to HTTPS redirect..."
-  sed -i '/listen 80;/a    return 301 https://$host$request_uri;' /etc/nginx/sites-available/novnc
-  systemctl reload nginx
+  echo "Setting up auto-renewal..."
+  if ! grep -q "certbot renew" /etc/crontab; then
+      echo "0 3 * * * certbot renew --quiet" >> /etc/crontab
+  else
+      echo "Certbot auto-renewal already configured. Skipping crontab setup."
+  fi
 
   echo "Reverse proxy configuration complete!"
   echo "Access your Kali Linux desktop securely at: https://$HOSTNAME"
+}
+
+function fix_nginx_config() {
+    echo "Attempting to fix common Nginx configuration issues..."
+
+    # Check if novnc site is enabled
+    if [ ! -L /etc/nginx/sites-enabled/novnc ]; then
+        echo "Enabling novnc site in Nginx..."
+        ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
+    else
+        echo "novnc site is already enabled."
+    fi
+
+    # Check if the default site is disabled
+    if [ -f /etc/nginx/sites-enabled/default ]; then
+        echo "Disabling default Nginx site..."
+        rm /etc/nginx/sites-enabled/default
+    fi
+    
+    # Check if HTTP to HTTPS redirect is in place
+    if ! grep -q "return 301 https" /etc/nginx/sites-available/novnc; then
+        echo "Adding HTTP to HTTPS redirect to novnc configuration..."
+        sed -i '/listen 80;/a \    return 301 https://$HOSTNAME$request_uri;' /etc/nginx/sites-available/novnc
+    fi
+
+    # Check for SSL certificate paths
+    if ! grep -q "ssl_certificate " /etc/nginx/sites-available/novnc; then
+        echo "SSL certificate paths are missing in novnc configuration. Please ensure they are correctly set."
+    fi
+
+    # Test Nginx configuration
+    echo "Testing Nginx configuration..."
+    if nginx -t; then
+        echo "Nginx configuration test successful. Reloading Nginx..."
+        systemctl reload nginx
+    else
+        echo "Nginx configuration test failed. Please check the configuration manually."
+    fi
+
+    echo "Fix attempt completed. Please verify the configuration."
 }
 
 function main_menu() {
@@ -191,7 +271,7 @@ function main_menu() {
     echo "Choose an option:"
     echo "1) Install noVNC with TigerVNC and XFCE4"
     echo "2) Configure Nginx reverse proxy with Let's Encrypt"
-    echo "3) Fix noVNC/Nginx setup"
+    echo "3) Fix Nginx Configuration"
     echo "4) Exit"
     read -p "Enter your choice: " choice
 
@@ -203,10 +283,7 @@ function main_menu() {
         configure_nginx_reverse_proxy
         ;;
       3)
-        echo "Fixing services..."
-        systemctl restart novnc
-        systemctl restart nginx
-        echo "Services restarted successfully."
+        fix_nginx_config
         ;;
       4)
         exit 0
