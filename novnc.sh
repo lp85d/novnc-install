@@ -19,15 +19,21 @@ VNC_DISPLAY=${VNC_DISPLAY:-:1}
 VNC_PORT=$((5900 + ${VNC_DISPLAY#:}))
 
 # Get public IP address
-PUBLIC_IP=$(curl -s https://ifconfig.me)
+PUBLIC_IP=$(curl -s4 https://ifconfig.me)
+
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root. Use sudo." >&2
+    exit 1
+fi
 
 # Update system packages
 echo "Updating system packages..."
-apt update && apt upgrade -y
+sudo apt update && sudo apt upgrade -y
 
 # Install necessary tools and VNC server
 echo "Installing TigerVNC server and necessary tools..."
-apt install -y tigervnc-standalone-server tigervnc-common git xfce4 xfce4-goodies
+sudo apt install -y tigervnc-standalone-server tigervnc-common git xfce4 xfce4-goodies dbus-x11 xfce4-terminal
 
 # Set up VNC password
 echo "Setting up VNC password..."
@@ -40,7 +46,10 @@ echo "Creating VNC startup script..."
 cat << EOF > ~/.vnc/xstartup
 #!/bin/bash
 xrdb $HOME/.Xresources
-startxfce4 &
+export XKL_XMODMAP_DISABLE=1
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+dbus-launch --exit-with-session startxfce4 &
 EOF
 chmod +x ~/.vnc/xstartup
 
@@ -48,6 +57,7 @@ chmod +x ~/.vnc/xstartup
 echo "Initializing VNC server..."
 vncserver $VNC_DISPLAY
 vncserver -kill $VNC_DISPLAY
+vncserver $VNC_DISPLAY
 
 # Install noVNC
 echo "Installing noVNC..."
@@ -58,7 +68,7 @@ git clone https://github.com/novnc/websockify.git
 
 # Create a systemd service for noVNC
 echo "Creating noVNC systemd service..."
-bash -c "cat << EOF > /etc/systemd/system/novnc.service
+sudo bash -c "cat << EOF > /etc/systemd/system/novnc.service
 [Unit]
 Description=noVNC Server
 After=network.target
@@ -75,16 +85,15 @@ EOF"
 
 # Reload systemd and enable the service
 echo "Enabling noVNC service..."
-systemctl daemon-reload
-systemctl enable novnc
-systemctl start novnc
+sudo systemctl daemon-reload
+sudo systemctl enable novnc
+sudo systemctl start novnc
 
 # Configure firewall (AWS Security Groups must also allow the specified ports)
 echo "Configuring firewall rules..."
-ufw allow $NOVNC_PORT
-ufw allow $VNC_PORT
-ufw enable
-
+sudo ufw allow $NOVNC_PORT
+sudo ufw allow $VNC_PORT
+sudo ufw enable
 
 echo ""
 echo "To allow external access to the necessary ports (noVNC and VNC) in AWS CloudShell or using AWS CLI, you can use the following commands (only if using the default security group):"
