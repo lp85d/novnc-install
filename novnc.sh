@@ -1,15 +1,23 @@
 #!/bin/bash
 
 # Kali Linux noVNC + TigerVNC + XFCE4 installation script
-# optional Nginx reverse proxy and Let's Encrypt setup
+# with optional Nginx reverse proxy and Let's Encrypt setup
 # https://github.com/vtstv/Install_Novnc_Kali
-# Install_Novnc_Kali v0.2 by Murr
+# Install_Novnc_Kali v0.3 by Murr
 
 # Check for root or sudo rights
 if [ "$EUID" -ne 0 ]; then
   echo "This script must be run as root or with sudo privileges."
   exit 1
 fi
+
+function get_existing_novnc_port() {
+  if [ -f /etc/systemd/system/novnc.service ]; then
+    grep -oP 'listen \K\d+' /etc/systemd/system/novnc.service | head -n1
+  else
+    echo "6080"
+  fi
+}
 
 function install_vnc_novnc() {
   # Prompt user for required variables
@@ -26,9 +34,10 @@ function install_vnc_novnc() {
 
   echo "Enter the VNC password (at least 6 characters):"
   read -s VNC_PASSWORD
-  echo "Enter the noVNC port (default 6080):"
-  read NOVNC_PORT
-  NOVNC_PORT=${NOVNC_PORT:-6080}
+  NOVNC_PORT=$(get_existing_novnc_port)
+  echo "Enter the noVNC port (default: $NOVNC_PORT):"
+  read USER_NOVNC_PORT
+  NOVNC_PORT=${USER_NOVNC_PORT:-$NOVNC_PORT}
 
   echo "Enter the VNC display number (default :1):"
   read VNC_DISPLAY
@@ -121,29 +130,46 @@ echo "http://$PUBLIC_IP:$NOVNC_PORT/vnc.html"
 }
 
 function configure_nginx_reverse_proxy() {
+  NOVNC_PORT=$(get_existing_novnc_port)
+  echo "Detected noVNC port: $NOVNC_PORT"
   echo "Installing Nginx..."
-  apt install -y nginx
+  apt install -y nginx apache2-utils
 
   echo "Enter the hostname for the reverse proxy (e.g., vnc.example.com):"
   read HOSTNAME
+
+  echo "Do you want to protect the proxy with basic HTTP authentication? (y/n):"
+  read USE_AUTH
+  if [ "$USE_AUTH" == "y" ]; then
+    echo "Enter username for HTTP authentication:"
+    read AUTH_USER
+    echo "Enter password for $AUTH_USER:"
+    htpasswd -c /etc/nginx/.novnc_htpasswd $AUTH_USER
+    AUTH_CONFIG="auth_basic \"Restricted Access\";\nauth_basic_user_file /etc/nginx/.novnc_htpasswd;"
+  else
+    AUTH_CONFIG=""
+  fi
 
   echo "Configuring Nginx..."
   cat << EOF > /etc/nginx/sites-available/novnc
 server {
     listen 80;
     server_name $HOSTNAME;
-
     location / {
+        $AUTH_CONFIG
         proxy_pass http://localhost:$NOVNC_PORT;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
     }
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
 }
 EOF
 
-  ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
+  ln -sf /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
   nginx -t && systemctl reload nginx
 
   echo "Installing Certbot for Let's Encrypt..."
@@ -152,8 +178,9 @@ EOF
   echo "Obtaining SSL certificate..."
   certbot --nginx -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME
 
-  echo "Setting up auto-renewal..."
-  echo "0 3 * * * certbot renew --quiet" >> /etc/crontab
+  echo "Configuring HTTP to HTTPS redirect..."
+  sed -i '/listen 80;/a    return 301 https://$host$request_uri;' /etc/nginx/sites-available/novnc
+  systemctl reload nginx
 
   echo "Reverse proxy configuration complete!"
   echo "Access your Kali Linux desktop securely at: https://$HOSTNAME"
@@ -164,7 +191,8 @@ function main_menu() {
     echo "Choose an option:"
     echo "1) Install noVNC with TigerVNC and XFCE4"
     echo "2) Configure Nginx reverse proxy with Let's Encrypt"
-    echo "3) Exit"
+    echo "3) Fix noVNC/Nginx setup"
+    echo "4) Exit"
     read -p "Enter your choice: " choice
 
     case $choice in
@@ -175,6 +203,12 @@ function main_menu() {
         configure_nginx_reverse_proxy
         ;;
       3)
+        echo "Fixing services..."
+        systemctl restart novnc
+        systemctl restart nginx
+        echo "Services restarted successfully."
+        ;;
+      4)
         exit 0
         ;;
       *)
