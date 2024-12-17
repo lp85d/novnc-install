@@ -26,7 +26,7 @@ function install_vnc_novnc() {
 
   echo "Enter the VNC password (at least 6 characters):"
   read -s VNC_PASSWORD
-  echo ""  # Newline for cleaner output
+  echo ""  
 
   # Check if noVNC is already installed and get the port
   if systemctl is-active --quiet novnc; then
@@ -51,7 +51,6 @@ function install_vnc_novnc() {
   echo "Updating system packages..."
   apt update && apt upgrade -y
 
-  # Install necessary tools and VNC server
   echo "Installing TigerVNC server and necessary tools..."
   apt install -y tigervnc-standalone-server tigervnc-common git xfce4 xfce4-goodies dbus-x11 xfce4-terminal
 
@@ -78,7 +77,6 @@ EOF"
   su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
   su - "$VNC_USER" -c "vncserver -kill $VNC_DISPLAY"
   
-  # Create a systemd service for TigerVNC
   echo "Creating TigerVNC systemd service..."
   cat << EOF > /etc/systemd/system/tigervncserver@.service
 [Unit]
@@ -130,19 +128,16 @@ User=$VNC_USER
 WantedBy=multi-user.target
 EOF
 
-    # Reload systemd and enable the service
     echo "Enabling noVNC service..."
     systemctl daemon-reload
     systemctl enable novnc
     systemctl start novnc
 
-    # Create symbolic link from vnc.html to index.html
     echo "Creating symbolic link from vnc.html to index.html..."
     ln -s /home/$VNC_USER/noVNC/vnc.html /home/$VNC_USER/noVNC/index.html
 
   fi
 
-  # Configure firewall
   echo "Configuring firewall rules..."
   ufw allow $NOVNC_PORT
   ufw allow $VNC_PORT
@@ -192,7 +187,7 @@ function configure_nginx_reverse_proxy() {
     read AUTH_USER
     echo "Enter the password for Basic Authentication:"
     read -s AUTH_PASSWORD
-    echo ""  # Newline for cleaner output
+    echo "" 
 
     echo "Installing apache2-utils for htpasswd..."
     apt install -y apache2-utils
@@ -383,12 +378,11 @@ function reinstall_nginx_reverse_proxy() {
     rm /etc/nginx/sites-enabled/novnc
   fi
 
-  # Remove existing Nginx configuration and Certbot certificates
   echo "Removing existing Nginx configuration and Certbot certificates..."
   rm -f /etc/nginx/sites-available/novnc
   certbot delete --cert-name "$HOSTNAME" --non-interactive
 
-  # Reconfigure Nginx reverse proxy (calls the configure_nginx_reverse_proxy function)
+
   echo "Reconfiguring Nginx reverse proxy..."
   configure_nginx_reverse_proxy
 }

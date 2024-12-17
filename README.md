@@ -1,2 +1,2 @@
-# Install_Novnc_Kali
- Install_Novnc_Kali
+novnc-install script, tested on Ubuntu 24 and kali linux
+WIP.
