@@ -3,7 +3,7 @@
 # Kali Linux noVNC + TigerVNC + XFCE4 installation script
 # optional Nginx reverse proxy and Let's Encrypt setup
 # https://github.com/vtstv/Install_Novnc_Kali
-# Install_Novnc_Kali v0.3 by Murr
+# Install_Novnc_Kali v0.7 by Murr
 
 # Check for root or sudo rights
 if [ "$EUID" -ne 0 ]; then
@@ -26,6 +26,7 @@ function install_vnc_novnc() {
 
   echo "Enter the VNC password (at least 6 characters):"
   read -s VNC_PASSWORD
+  echo ""  # Newline for cleaner output
 
   # Check if noVNC is already installed and get the port
   if systemctl is-active --quiet novnc; then
@@ -37,7 +38,6 @@ function install_vnc_novnc() {
     read NOVNC_PORT
     NOVNC_PORT=${NOVNC_PORT:-6080}
   fi
-  
 
   echo "Enter the VNC display number (default :1):"
   read VNC_DISPLAY
@@ -78,35 +78,35 @@ EOF"
   su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
   su - "$VNC_USER" -c "vncserver -kill $VNC_DISPLAY"
   su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
-  
-    # Install noVNC (only if not already installed)
+
+  # Install noVNC (only if not already installed)
   if ! systemctl is-active --quiet novnc; then
-      echo "Installing noVNC..."
-      su - "$VNC_USER" -c "cd ~ && git clone https://github.com/novnc/noVNC.git"
-      su - "$VNC_USER" -c "cd ~/noVNC && git clone https://github.com/novnc/websockify.git"
+    echo "Installing noVNC..."
+    su - "$VNC_USER" -c "cd ~ && git clone https://github.com/novnc/noVNC.git"
+    su - "$VNC_USER" -c "cd ~/noVNC && git clone https://github.com/novnc/websockify.git"
 
-      # Create a systemd service for noVNC
-      echo "Creating noVNC systemd service..."
-      cat << EOF > /etc/systemd/system/novnc.service
-  [Unit]
-  Description=noVNC Server
-  After=network.target
+    # Create a systemd service for noVNC
+    echo "Creating noVNC systemd service..."
+    cat << EOF > /etc/systemd/system/novnc.service
+[Unit]
+Description=noVNC Server
+After=network.target
 
-  [Service]
-  Type=simple
-  ExecStart=/home/$VNC_USER/noVNC/utils/novnc_proxy --vnc localhost:$VNC_PORT --listen $NOVNC_PORT
-  Restart=always
-  User=$VNC_USER
+[Service]
+Type=simple
+ExecStart=/home/$VNC_USER/noVNC/utils/novnc_proxy --vnc localhost:$VNC_PORT --listen $NOVNC_PORT
+Restart=always
+User=$VNC_USER
 
-  [Install]
-  WantedBy=multi-user.target
-  EOF
+[Install]
+WantedBy=multi-user.target
+EOF
 
-      # Reload systemd and enable the service
-      echo "Enabling noVNC service..."
-      systemctl daemon-reload
-      systemctl enable novnc
-      systemctl start novnc
+    # Reload systemd and enable the service
+    echo "Enabling noVNC service..."
+    systemctl daemon-reload
+    systemctl enable novnc
+    systemctl start novnc
   fi
 
   # Configure firewall
@@ -115,20 +115,21 @@ EOF"
   ufw allow $VNC_PORT
   ufw enable
 
-echo ""
-echo "To allow external access to the necessary ports (noVNC and VNC) in AWS CloudShell or using AWS CLI, you can use the following commands (only if using the default security group):"
-echo ""
-echo "vpc_id=\$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)"
-echo "security_group_id=\$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=\$vpc_id --query 'SecurityGroups[?GroupName==\`default\`].GroupId' --output text)"
-echo ""
-echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $NOVNC_PORT --cidr 0.0.0.0/0"
-echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $VNC_PORT --cidr 0.0.0.0/0"
+  echo ""
+  echo "To allow external access to the necessary ports (noVNC and VNC) in AWS CloudShell or using AWS CLI,"
+  echo "you can use the following commands (only if using the default security group):"
+  echo ""
+  echo "vpc_id=\$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)"
+  echo "security_group_id=\$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=\$vpc_id --query 'SecurityGroups[?GroupName==\`default\`].GroupId' --output text)"
+  echo ""
+  echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $NOVNC_PORT --cidr 0.0.0.0/0"
+  echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $VNC_PORT --cidr 0.0.0.0/0"
 
-echo "Type sudo apt install kali-linux-large to install clasic Kali tools"
+  echo "Type sudo apt install kali-linux-large to install classic Kali tools"
 
-echo "Installation complete!"
-echo "Access your Kali Linux desktop through noVNC by visiting:"
-echo "http://$PUBLIC_IP:$NOVNC_PORT/vnc.html"
+  echo "Installation complete!"
+  echo "Access your Kali Linux desktop through noVNC by visiting:"
+  echo "http://$PUBLIC_IP:$NOVNC_PORT/vnc.html"
 }
 
 function configure_nginx_reverse_proxy() {
@@ -158,6 +159,7 @@ function configure_nginx_reverse_proxy() {
     read AUTH_USER
     echo "Enter the password for Basic Authentication:"
     read -s AUTH_PASSWORD
+    echo ""  # Newline for cleaner output
 
     echo "Installing apache2-utils for htpasswd..."
     apt install -y apache2-utils
@@ -168,6 +170,64 @@ function configure_nginx_reverse_proxy() {
         auth_basic_user_file /etc/nginx/.htpasswd;"
   fi
 
+  # Temporarily disable the potentially problematic site config
+  if [ -L /etc/nginx/sites-enabled/novnc ]; then
+    echo "Temporarily disabling existing novnc site..."
+    mv /etc/nginx/sites-enabled/novnc /etc/nginx/sites-enabled/novnc.bak
+  fi
+
+  # Certificate setup with standalone plugin
+  if ! certbot certificates | grep -q "$HOSTNAME"; then
+    echo "Installing Certbot for Let's Encrypt..."
+    apt install -y certbot python3-certbot-nginx
+
+    # Check for /etc/letsencrypt/live directory and create if missing
+    if [ ! -d "/etc/letsencrypt/live" ]; then
+      echo "Creating /etc/letsencrypt/live directory..."
+      mkdir -p /etc/letsencrypt/live
+      if [ $? -ne 0 ]; then
+        echo "Error: Could not create /etc/letsencrypt/live directory. Please check permissions."
+        return 1
+      fi
+    fi
+
+    # Check for /etc/letsencrypt/live/$HOSTNAME directory and create if missing
+    if [ ! -d "/etc/letsencrypt/live/$HOSTNAME" ]; then
+      echo "Creating /etc/letsencrypt/live/$HOSTNAME directory..."
+      mkdir -p /etc/letsencrypt/live/$HOSTNAME
+      if [ $? -ne 0 ]; then
+        echo "Error: Could not create /etc/letsencrypt/live/$HOSTNAME directory. Please check permissions."
+        return 1
+      fi
+    fi
+
+    echo "Obtaining SSL certificate (using standalone plugin)..."
+    systemctl stop nginx # Stop nginx to free up port 80 for standalone
+    if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME; then
+      echo "Error: Initial attempt to obtain SSL certificate failed."
+      echo "Do you want to automatically retry certificate generation? (y/n)"
+      read RETRY_CERT
+      RETRY_CERT=${RETRY_CERT:-n}
+
+      if [[ "$RETRY_CERT" == "y" ]]; then
+        echo "Retrying certificate generation..."
+        if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME; then
+          echo "Error: Retry attempt failed. Please check the error messages above and try again manually."
+          return 1
+        else
+          echo "SSL certificate successfully obtained on retry."
+        fi
+      else
+        echo "Skipping certificate retry. Please fix the issue and try again manually."
+        return 1
+      fi
+    fi
+    systemctl start nginx # Restart Nginx after obtaining the certificate
+  else
+    echo "SSL certificate for $HOSTNAME already exists. Skipping Certbot installation."
+  fi
+
+  # Create Nginx configuration file
   echo "Configuring Nginx..."
   cat << EOF > /etc/nginx/sites-available/novnc
 server {
@@ -199,27 +259,22 @@ server {
 }
 EOF
 
+  # Enable the site
+  if [ -L /etc/nginx/sites-enabled/novnc.bak ]; then
+    echo "Replacing old novnc site configuration..."
+    rm /etc/nginx/sites-enabled/novnc.bak
+  fi
   if ! [ -L /etc/nginx/sites-enabled/novnc ]; then
-        ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
+    ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
   fi
 
   nginx -t && systemctl reload nginx
 
-  if ! certbot certificates | grep -q "$HOSTNAME"; then
-        echo "Installing Certbot for Let's Encrypt..."
-        apt install -y certbot python3-certbot-nginx
-
-        echo "Obtaining SSL certificate..."
-        certbot --nginx -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME
-  else
-      echo "SSL certificate for $HOSTNAME already exists. Skipping Certbot installation."
-  fi
-
   echo "Setting up auto-renewal..."
   if ! grep -q "certbot renew" /etc/crontab; then
-      echo "0 3 * * * certbot renew --quiet" >> /etc/crontab
+    echo "0 3 * * * certbot renew --quiet" >> /etc/crontab
   else
-      echo "Certbot auto-renewal already configured. Skipping crontab setup."
+    echo "Certbot auto-renewal already configured. Skipping crontab setup."
   fi
 
   echo "Reverse proxy configuration complete!"
@@ -227,43 +282,63 @@ EOF
 }
 
 function fix_nginx_config() {
-    echo "Attempting to fix common Nginx configuration issues..."
+  echo "Attempting to fix common Nginx configuration issues..."
 
-    # Check if novnc site is enabled
-    if [ ! -L /etc/nginx/sites-enabled/novnc ]; then
-        echo "Enabling novnc site in Nginx..."
-        ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
-    else
-        echo "novnc site is already enabled."
-    fi
+  # Check if novnc site is enabled
+  if [ ! -L /etc/nginx/sites-enabled/novnc ]; then
+    echo "Enabling novnc site in Nginx..."
+    ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
+  else
+    echo "novnc site is already enabled."
+  fi
 
-    # Check if the default site is disabled
-    if [ -f /etc/nginx/sites-enabled/default ]; then
-        echo "Disabling default Nginx site..."
-        rm /etc/nginx/sites-enabled/default
-    fi
-    
-    # Check if HTTP to HTTPS redirect is in place
-    if ! grep -q "return 301 https" /etc/nginx/sites-available/novnc; then
-        echo "Adding HTTP to HTTPS redirect to novnc configuration..."
-        sed -i '/listen 80;/a \    return 301 https://$HOSTNAME$request_uri;' /etc/nginx/sites-available/novnc
-    fi
+  # Check if the default site is disabled
+  if [ -f /etc/nginx/sites-enabled/default ]; then
+    echo "Disabling default Nginx site..."
+    rm /etc/nginx/sites-enabled/default
+  fi
 
-    # Check for SSL certificate paths
-    if ! grep -q "ssl_certificate " /etc/nginx/sites-available/novnc; then
-        echo "SSL certificate paths are missing in novnc configuration. Please ensure they are correctly set."
-    fi
+  # Check if HTTP to HTTPS redirect is in place
+  if ! grep -q "return 301 https" /etc/nginx/sites-available/novnc; then
+    echo "Adding HTTP to HTTPS redirect to novnc configuration..."
+    sed -i '/listen 80;/a \    return 301 https://$HOSTNAME$request_uri;' /etc/nginx/sites-available/novnc
+  fi
 
-    # Test Nginx configuration
-    echo "Testing Nginx configuration..."
-    if nginx -t; then
-        echo "Nginx configuration test successful. Reloading Nginx..."
-        systemctl reload nginx
-    else
-        echo "Nginx configuration test failed. Please check the configuration manually."
-    fi
+  # Check for SSL certificate paths
+  if ! grep -q "ssl_certificate " /etc/nginx/sites-available/novnc; then
+    echo "SSL certificate paths are missing in novnc configuration. Please ensure they are correctly set."
+  fi
 
-    echo "Fix attempt completed. Please verify the configuration."
+  # Test Nginx configuration
+  echo "Testing Nginx configuration..."
+  if nginx -t; then
+    echo "Nginx configuration test successful. Reloading Nginx..."
+    systemctl reload nginx
+  else
+    echo "Nginx configuration test failed. Please check the configuration manually."
+  fi
+
+  echo "Fix attempt completed. Please verify the configuration."
+}
+
+function reinstall_nginx_reverse_proxy() {
+  echo "Reinstalling Nginx reverse proxy setup..."
+
+  # Stop Nginx and disable novnc site
+  echo "Stopping Nginx and disabling novnc site..."
+  systemctl stop nginx
+  if [ -L /etc/nginx/sites-enabled/novnc ]; then
+    rm /etc/nginx/sites-enabled/novnc
+  fi
+
+  # Remove existing Nginx configuration and Certbot certificates
+  echo "Removing existing Nginx configuration and Certbot certificates..."
+  rm -f /etc/nginx/sites-available/novnc
+  certbot delete --cert-name "$HOSTNAME" --non-interactive
+
+  # Reconfigure Nginx reverse proxy (calls the configure_nginx_reverse_proxy function)
+  echo "Reconfiguring Nginx reverse proxy..."
+  configure_nginx_reverse_proxy
 }
 
 function main_menu() {
@@ -272,25 +347,29 @@ function main_menu() {
     echo "1) Install noVNC with TigerVNC and XFCE4"
     echo "2) Configure Nginx reverse proxy with Let's Encrypt"
     echo "3) Fix Nginx Configuration"
-    echo "4) Exit"
+    echo "4) Reinstall Nginx Reverse Proxy Setup"
+    echo "5) Exit"
     read -p "Enter your choice: " choice
 
     case $choice in
-      1)
-        install_vnc_novnc
-        ;;
-      2)
-        configure_nginx_reverse_proxy
-        ;;
-      3)
-        fix_nginx_config
-        ;;
-      4)
-        exit 0
-        ;;
-      *)
-        echo "Invalid choice, please try again."
-        ;;
+    1)
+      install_vnc_novnc
+      ;;
+    2)
+      configure_nginx_reverse_proxy
+      ;;
+    3)
+      fix_nginx_config
+      ;;
+    4)
+      reinstall_nginx_reverse_proxy
+      ;;
+    5)
+      exit 0
+      ;;
+    *)
+      echo "Invalid choice, please try again."
+      ;;
     esac
   done
 }
