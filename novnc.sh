@@ -3,7 +3,7 @@
 # Kali Linux noVNC + TigerVNC + XFCE4 installation script
 # optional Nginx reverse proxy and Let's Encrypt setup
 # https://github.com/vtstv/Install_Novnc_Kali
-# Install_Novnc_Kali v0.7 by Murr
+# novnc.sh v0.7 by Murr
 
 # Check for root or sudo rights
 if [ "$EUID" -ne 0 ]; then
