@@ -91,10 +91,11 @@ User=$VNC_USER
 Group=$VNC_USER
 WorkingDirectory=/home/$VNC_USER
 
+
 PIDFile=/home/$VNC_USER/.vnc/%H%i.pid
-ExecStartPre=-/usr/bin/vncserver -kill :%i > /dev/null 2>&1
-ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :%i
-ExecStop=/usr/bin/vncserver -kill :%i
+ExecStartPre=-/usr/bin/vncserver -kill :1 > /dev/null 2>&1
+ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :1
+ExecStop=/usr/bin/vncserver -kill :1
 
 [Install]
 WantedBy=multi-user.target
