@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Debian based Linux noVNC + TigerVNC + XFCE4 installation script
+# Ubuntu Server noVNC + TigerVNC + XFCE4 installation script
 # optional Nginx reverse proxy and Let's Encrypt setup
 # https://github.com/vtstv/novnc-install
-# novnc_setup.sh v0.8 by Murr
+# novnc_setup.sh v0.9 by Murr (adapted for Ubuntu)
 
 # Check for root or sudo rights
 if [ "$EUID" -ne 0 ]; then
@@ -75,9 +75,9 @@ EOF"
 
   # Start and stop VNC to initialize configuration, then enable it to start on boot
   echo "Initializing and enabling VNC server..."
-  su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
+  su - "$VNC_USER" -c "vncserver $VNC_DISPLAY -geometry 1280x800" 
   su - "$VNC_USER" -c "vncserver -kill $VNC_DISPLAY"
-  
+
   # Create a systemd service for TigerVNC
   echo "Creating TigerVNC systemd service..."
   cat << EOF > /etc/systemd/system/tigervncserver@.service
@@ -143,25 +143,17 @@ EOF
 
   # Configure firewall
   echo "Configuring firewall rules..."
-  ufw allow $NOVNC_PORT
-  ufw allow $VNC_PORT
-  
-  echo "-----------------------------------------------------------------------------------------"
-  echo ""
-  echo "To allow external access to the necessary ports (noVNC and VNC) in AWS CloudShell or using AWS CLI,"
-  echo "you can use the following commands (only if using the default security group):"
-  echo ""
-  echo "vpc_id=\$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)"
-  echo "security_group_id=\$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=\$vpc_id --query 'SecurityGroups[?GroupName==\`default\`].GroupId' --output text)"
-  echo ""
-  echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $NOVNC_PORT --cidr 0.0.0.0/0"
-  echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $VNC_PORT --cidr 0.0.0.0/0"
-  echo "-----------------------------------------------------------------------------------------"
+  if command -v ufw &> /dev/null; then
+    ufw allow $NOVNC_PORT
+    ufw allow $VNC_PORT
+  else
+    echo "UFW is not installed. Skipping firewall configuration."
+  fi
 
   echo "-----------------------------------------------------------------------------------------"
   echo "Installation complete!"
-  echo "Access your Linux desktop through noVNC by visiting:"
-  echo "http://$PUBLIC_IP:$NOVNC_PORT"
+  echo "Access your Ubuntu desktop through noVNC by visiting:"
+  echo "http://$PUBLIC_IP:$NOVNC_PORT/vnc.html"
 }
 
 function configure_nginx_reverse_proxy() {
@@ -213,10 +205,12 @@ function configure_nginx_reverse_proxy() {
   fi
 
   # Certificate setup with standalone plugin
-  if ! certbot certificates | grep -q "$HOSTNAME"; then
+  if ! command -v certbot &> /dev/null; then
     echo "Installing Certbot for Let's Encrypt..."
     apt install -y certbot python3-certbot-nginx
+  fi
 
+  if ! certbot certificates | grep -q "$HOSTNAME"; then
     # Check for /etc/letsencrypt/live directory and create if missing
     if [ ! -d "/etc/letsencrypt/live" ]; then
       echo "Creating /etc/letsencrypt/live directory..."
@@ -239,7 +233,7 @@ function configure_nginx_reverse_proxy() {
 
     echo "Obtaining SSL certificate (using standalone plugin)..."
     systemctl stop nginx # Stop nginx to free up port 80 for standalone
-    if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME; then
+    if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME --nginx; then
       echo "Error: Initial attempt to obtain SSL certificate failed."
       echo "Do you want to automatically retry certificate generation? (y/n)"
       read RETRY_CERT
@@ -247,7 +241,7 @@ function configure_nginx_reverse_proxy() {
 
       if [[ "$RETRY_CERT" == "y" ]]; then
         echo "Retrying certificate generation..."
-        if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME; then
+        if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME --nginx; then
           echo "Error: Retry attempt failed. Please check the error messages above and try again manually."
           return 1
         else
@@ -329,7 +323,7 @@ EOF
   fi
 
   echo "Reverse proxy configuration complete!"
-  echo "Access your Linux desktop securely at: https://$HOSTNAME"
+  echo "Access your Ubuntu desktop securely at: https://$HOSTNAME"
 }
 
 function fix_nginx_config() {
