@@ -26,6 +26,11 @@ The script provides an interactive menu to guide you through the installation an
 3. Fix common Nginx configuration problems.
 4. Reinstall the Nginx reverse proxy setup.
 
+## An example of Kali linux running in the AWS cloud:
+
+<img src="https://github.com/user-attachments/assets/895f3f5d-1def-42a8-a056-596769f37418" style="width:80%;">
+
+
 ## 🔒 Security Note
 
 **Always** use strong and unique passwords for your VNC user and HTTP Basic Authentication.
