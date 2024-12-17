@@ -3,7 +3,7 @@
 # Kali Linux noVNC + TigerVNC + XFCE4 installation script
 # optional Nginx reverse proxy and Let's Encrypt setup
 # https://github.com/vtstv/Install_Novnc_Kali
-# novnc.sh v0.7 by Murr
+# novnc_setup.sh v0.8 by Murr
 
 # Check for root or sudo rights
 if [ "$EUID" -ne 0 ]; then
@@ -73,11 +73,38 @@ dbus-launch --exit-with-session startxfce4 &
 EOF"
   su - "$VNC_USER" -c "chmod +x ~/.vnc/xstartup"
 
-  # Start and stop VNC to initialize configuration
-  echo "Initializing VNC server..."
+  # Start and stop VNC to initialize configuration, then enable it to start on boot
+  echo "Initializing and enabling VNC server..."
   su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
   su - "$VNC_USER" -c "vncserver -kill $VNC_DISPLAY"
-  su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
+  
+  # Create a systemd service for TigerVNC
+  echo "Creating TigerVNC systemd service..."
+  cat << EOF > /etc/systemd/system/tigervncserver@.service
+[Unit]
+Description=TigerVNC Server
+After=syslog.target network.target
+
+[Service]
+Type=forking
+User=$VNC_USER
+Group=$VNC_USER
+WorkingDirectory=/home/$VNC_USER
+
+PIDFile=/home/$VNC_USER/.vnc/%H%i.pid
+ExecStartPre=-/usr/bin/vncserver -kill :%i > /dev/null 2>&1
+ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :%i
+ExecStop=/usr/bin/vncserver -kill :%i
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # Reload systemd, enable and start the tigervnc service
+  echo "Enabling and starting TigerVNC service..."
+  systemctl daemon-reload
+  systemctl enable tigervncserver@$VNC_DISPLAY
+  systemctl start tigervncserver@$VNC_DISPLAY
 
   # Install noVNC (only if not already installed)
   if ! systemctl is-active --quiet novnc; then
@@ -119,7 +146,7 @@ EOF
   ufw allow $NOVNC_PORT
   ufw allow $VNC_PORT
   ufw enable
-
+  echo "-----------------------------------------------------------------------------------------"
   echo ""
   echo "To allow external access to the necessary ports (noVNC and VNC) in AWS CloudShell or using AWS CLI,"
   echo "you can use the following commands (only if using the default security group):"
@@ -129,9 +156,9 @@ EOF
   echo ""
   echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $NOVNC_PORT --cidr 0.0.0.0/0"
   echo "aws ec2 authorize-security-group-ingress --group-id \$security_group_id --protocol tcp --port $VNC_PORT --cidr 0.0.0.0/0"
-
+  echo "-----------------------------------------------------------------------------------------"
   echo "Type sudo apt install kali-linux-large to install classic Kali tools"
-
+  echo "-----------------------------------------------------------------------------------------"
   echo "Installation complete!"
   echo "Access your Kali Linux desktop through noVNC by visiting:"
   echo "http://$PUBLIC_IP:$NOVNC_PORT/vnc.html"
@@ -170,6 +197,10 @@ function configure_nginx_reverse_proxy() {
     apt install -y apache2-utils
 
     htpasswd -bc /etc/nginx/.htpasswd "$AUTH_USER" "$AUTH_PASSWORD"
+    # Ensure correct permissions for the .htpasswd file
+    chmod 640 /etc/nginx/.htpasswd
+    chown root:www-data /etc/nginx/.htpasswd
+
     AUTH_CONFIG="
         auth_basic \"Restricted\";
         auth_basic_user_file /etc/nginx/.htpasswd;"
@@ -273,7 +304,22 @@ EOF
     ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
   fi
 
-  nginx -t && systemctl reload nginx
+  # Ensure Nginx has correct permissions and ownership
+  chown -R www-data:www-data /var/lib/nginx
+  find /etc/nginx -type d -exec chmod 750 {} \;
+  find /etc/nginx -type f -exec chmod 640 {} \;
+
+  # Test configuration and reload Nginx
+  if nginx -t; then
+    systemctl reload nginx
+    echo "Nginx configuration reloaded successfully."
+  else
+    echo "Error in Nginx configuration. Check with 'nginx -t' for details."
+    return 1
+  fi
+
+  # Enable Nginx to start on boot
+  systemctl enable nginx
 
   echo "Setting up auto-renewal..."
   if ! grep -q "certbot renew" /etc/crontab; then
