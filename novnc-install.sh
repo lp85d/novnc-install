@@ -177,7 +177,7 @@ function configure_nginx_reverse_proxy() {
   echo "Enter the hostname for the reverse proxy (e.g., vnc.example.com):"
   read HOSTNAME
 
-  echo "Do you want to enable HTTP Basic Authentication? (y/n):"
+  echo "Do you want to enable HTTP Basic Authentication? (y/N):"
   read ENABLE_BASIC_AUTH
   ENABLE_BASIC_AUTH=${ENABLE_BASIC_AUTH:-n}
 
