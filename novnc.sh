@@ -107,6 +107,11 @@ EOF
     systemctl daemon-reload
     systemctl enable novnc
     systemctl start novnc
+
+    # Create symbolic link from vnc.html to index.html
+    echo "Creating symbolic link from vnc.html to index.html..."
+    ln -s /home/$VNC_USER/noVNC/vnc.html /home/$VNC_USER/noVNC/index.html
+
   fi
 
   # Configure firewall
