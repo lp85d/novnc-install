@@ -1,70 +1,70 @@
 #!/bin/bash
 
-# Debian based Linux noVNC + TigerVNC + XFCE4 installation script
-# optional Nginx reverse proxy and Let's Encrypt setup
-# https://github.com/vtstv/novnc-install
-# novnc_setup.sh v0.8 by Murr
+# Установка noVNC + TigerVNC + XFCE4 на Debian/Ubuntu
+# Дополнительно: настройка обратного прокси Nginx и SSL Let's Encrypt
+# https://github.com/lp85d/novnc-install
+# novnc_setup.sh v0.9 by lp85d
 
-# Check for root or sudo rights
+# Проверка прав root или sudo
 if [ "$EUID" -ne 0 ]; then
-  echo "This script must be run as root or with sudo privileges."
+  echo "Этот скрипт должен быть запущен от имени root или с правами sudo."
   exit 1
 fi
 
 function install_vnc_novnc() {
-  # Prompt user for required variables
-  echo "Enter the username for VNC (default: vncuser):"
+  # Запрос переменных у пользователя
+  echo "Введите имя пользователя для VNC (по умолчанию: vncuser):"
   read VNC_USER
   VNC_USER=${VNC_USER:-vncuser}
 
   if ! id -u "$VNC_USER" &>/dev/null; then
-    echo "User $VNC_USER does not exist. Creating..."
+    echo "Пользователь $VNC_USER не существует. Создаём..."
     useradd -m -s /bin/bash "$VNC_USER"
-    echo "Set a password for $VNC_USER:"
+    echo "Установите пароль для $VNC_USER:"
     passwd "$VNC_USER"
   fi
 
-  echo "Enter the VNC password (at least 6 characters):"
+  echo "Введите пароль VNC (не менее 6 символов):"
   read -s VNC_PASSWORD
-  echo ""  
+  echo ""
 
-  # Check if noVNC is already installed and get the port
+  # Проверка, установлен ли noVNC, и получение порта
   if systemctl is-active --quiet novnc; then
-    echo "noVNC is already installed."
+    echo "noVNC уже установлен."
     NOVNC_PORT=$(systemctl show -p ExecStart --value novnc | awk -F'--listen ' '{print $2}' | awk '{print $1}')
-    echo "Using existing noVNC port: $NOVNC_PORT"
+    echo "Используется существующий порт noVNC: $NOVNC_PORT"
   else
-    echo "Enter the noVNC port (default 6080):"
+    echo "Введите порт для noVNC (по умолчанию 6080):"
     read NOVNC_PORT
     NOVNC_PORT=${NOVNC_PORT:-6080}
   fi
 
-  echo "Enter the VNC display number (default :1):"
+  echo "Введите номер дисплея VNC (по умолчанию :1):"
   read VNC_DISPLAY
   VNC_DISPLAY=${VNC_DISPLAY:-:1}
   VNC_PORT=$((5900 + ${VNC_DISPLAY#:}))
 
-  # Get public IP address
+  # Получение публичного IP-адреса
   PUBLIC_IP=$(curl -s4 https://ifconfig.me)
 
-  # Update system packages
-  echo "Updating system packages..."
+  # Обновление системных пакетов
+  echo "Обновление системных пакетов..."
   apt update && apt upgrade -y
 
-  echo "Installing TigerVNC server and necessary tools..."
+  echo "Установка сервера TigerVNC и необходимых инструментов..."
   apt install -y tigervnc-standalone-server tigervnc-common git xfce4 xfce4-goodies dbus-x11 xfce4-terminal
 
-  # Set up VNC password
-  echo "Setting up VNC password..."
+  # Настройка пароля VNC
+  echo "Настройка пароля VNC..."
   su - "$VNC_USER" -c "mkdir -p ~/.vnc"
   echo "$VNC_PASSWORD" | su - "$VNC_USER" -c "vncpasswd -f > ~/.vnc/passwd"
   su - "$VNC_USER" -c "chmod 600 ~/.vnc/passwd"
 
-  # Create VNC startup script
-  echo "Creating VNC startup script..."
+  # Создание скрипта запуска VNC
+  echo "Создание скрипта запуска VNC..."
   su - "$VNC_USER" -c "cat << EOF > ~/.vnc/xstartup
 #!/bin/bash
-[ -f "$HOME/.Xresources" ] && xrdb "$HOME/.Xresources"
+[ -f \"\$HOME/.Xresources\" ] && xrdb \"\$HOME/.Xresources\"
 export XKL_XMODMAP_DISABLE=1
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
@@ -72,15 +72,15 @@ startxfce4
 EOF"
   su - "$VNC_USER" -c "chmod +x ~/.vnc/xstartup"
 
-  # Start and stop VNC to initialize configuration, then enable it to start on boot
-  echo "Initializing and enabling VNC server..."
+  # Инициализация и активация VNC-сервера
+  echo "Инициализация и активация VNC-сервера..."
   su - "$VNC_USER" -c "vncserver $VNC_DISPLAY"
   su - "$VNC_USER" -c "vncserver -kill $VNC_DISPLAY"
-  
-  echo "Creating TigerVNC systemd service..."
+
+  echo "Создание службы systemd для TigerVNC..."
   cat << EOF > /etc/systemd/system/tigervncserver@.service
 [Unit]
-Description=TigerVNC Server
+Description=Сервер TigerVNC
 After=syslog.target network.target
 
 [Service]
@@ -88,7 +88,6 @@ Type=forking
 User=$VNC_USER
 Group=$VNC_USER
 WorkingDirectory=/home/$VNC_USER
-
 
 PIDFile=/home/$VNC_USER/.vnc/%H%i.pid
 ExecStartPre=-/usr/bin/vncserver -kill :1 > /dev/null 2>&1
@@ -99,23 +98,23 @@ ExecStop=/usr/bin/vncserver -kill :1
 WantedBy=multi-user.target
 EOF
 
-  # Reload systemd, enable and start the tigervnc service
-  echo "Enabling and starting TigerVNC service..."
+  # Перезагрузка systemd, активация и запуск службы tigervnc
+  echo "Активация и запуск службы TigerVNC..."
   systemctl daemon-reload
   systemctl enable tigervncserver@$VNC_DISPLAY
   systemctl start tigervncserver@$VNC_DISPLAY
 
-  # Install noVNC (only if not already installed)
+  # Установка noVNC (только если не установлен)
   if ! systemctl is-active --quiet novnc; then
-    echo "Installing noVNC..."
+    echo "Установка noVNC..."
     su - "$VNC_USER" -c "cd ~ && git clone https://github.com/novnc/noVNC.git"
     su - "$VNC_USER" -c "cd ~/noVNC && git clone https://github.com/novnc/websockify.git"
 
-    # Create a systemd service for noVNC
-    echo "Creating noVNC systemd service..."
+    # Создание службы systemd для noVNC
+    echo "Создание службы systemd для noVNC..."
     cat << EOF > /etc/systemd/system/novnc.service
 [Unit]
-Description=noVNC Server
+Description=Сервер noVNC
 After=network.target
 
 [Service]
@@ -128,24 +127,23 @@ User=$VNC_USER
 WantedBy=multi-user.target
 EOF
 
-    echo "Enabling noVNC service..."
+    echo "Активация службы noVNC..."
     systemctl daemon-reload
     systemctl enable novnc
     systemctl start novnc
 
-    echo "Creating symbolic link from vnc.html to index.html..."
+    echo "Создание символической ссылки с vnc.html на index.html..."
     ln -s /home/$VNC_USER/noVNC/vnc.html /home/$VNC_USER/noVNC/index.html
-
   fi
 
-  echo "Configuring firewall rules..."
+  echo "Настройка правил брандмауэра..."
   ufw allow $NOVNC_PORT
   ufw allow $VNC_PORT
-  
+
   echo "-----------------------------------------------------------------------------------------"
   echo ""
-  echo "To allow external access to the necessary ports (noVNC and VNC) in AWS CloudShell or using AWS CLI,"
-  echo "you can use the following commands (only if using the default security group):"
+  echo "Для разрешения внешнего доступа к необходимым портам (noVNC и VNC) в AWS CloudShell или с помощью AWS CLI,"
+  echo "вы можете использовать следующие команды (только если используется группа безопасности по умолчанию):"
   echo ""
   echo "vpc_id=\$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)"
   echo "security_group_id=\$(aws ec2 describe-security-groups --filters Name=vpc-id,Values=\$vpc_id --query 'SecurityGroups[?GroupName==\`default\`].GroupId' --output text)"
@@ -155,8 +153,8 @@ EOF
   echo "-----------------------------------------------------------------------------------------"
 
   echo "-----------------------------------------------------------------------------------------"
-  echo "Installation complete!"
-  echo "Access your Linux desktop through noVNC by visiting:"
+  echo "Установка завершена!"
+  echo "Доступ к вашему рабочему столу Linux через noVNC по адресу:"
   echo "http://$PUBLIC_IP:$NOVNC_PORT"
 }
 
@@ -164,109 +162,106 @@ function configure_nginx_reverse_proxy() {
   if [ -z "$NOVNC_PORT" ]; then
     if systemctl is-active --quiet novnc; then
       NOVNC_PORT=$(systemctl show -p ExecStart --value novnc | awk -F'--listen ' '{print $2}' | awk '{print $1}')
-      echo "Using existing noVNC port: $NOVNC_PORT"
+      echo "Используется существующий порт noVNC: $NOVNC_PORT"
     else
-      echo "Error: noVNC port is not defined. Please install noVNC first or set NOVNC_PORT manually."
+      echo "Ошибка: порт noVNC не определён. Сначала установите noVNC или задайте NOVNC_PORT вручную."
       return 1
     fi
   fi
 
-  echo "Installing Nginx..."
+  echo "Установка Nginx..."
   apt install -y nginx
 
-  echo "Enter the hostname for the reverse proxy (e.g., vnc.example.com):"
+  echo "Введите имя хоста для обратного прокси (например, vnc.example.com):"
   read HOSTNAME
 
-  echo "Do you want to enable HTTP Basic Authentication? (y/N):"
+  echo "Хотите включить базовую HTTP-аутентификацию? (y/N):"
   read ENABLE_BASIC_AUTH
   ENABLE_BASIC_AUTH=${ENABLE_BASIC_AUTH:-n}
 
   AUTH_CONFIG=""
   if [[ "$ENABLE_BASIC_AUTH" == "y" ]]; then
-    echo "Enter the username for Basic Authentication:"
+    echo "Введите имя пользователя для базовой аутентификации:"
     read AUTH_USER
-    echo "Enter the password for Basic Authentication:"
+    echo "Введите пароль для базовой аутентификации:"
     read -s AUTH_PASSWORD
-    echo "" 
+    echo ""
 
-    echo "Installing apache2-utils for htpasswd..."
+    echo "Установка apache2-utils для htpasswd..."
     apt install -y apache2-utils
 
     htpasswd -bc /etc/nginx/.htpasswd "$AUTH_USER" "$AUTH_PASSWORD"
-    # Ensure correct permissions for the .htpasswd file
     chmod 640 /etc/nginx/.htpasswd
     chown root:www-data /etc/nginx/.htpasswd
 
     AUTH_CONFIG="
-        auth_basic \"Restricted\";
+        auth_basic \"Ограниченный доступ\";
         auth_basic_user_file /etc/nginx/.htpasswd;"
   fi
 
-  # Temporarily disable the potentially problematic site config
+  # Временное отключение потенциально проблемной конфигурации сайта
   if [ -L /etc/nginx/sites-enabled/novnc ]; then
-    echo "Temporarily disabling existing novnc site..."
+    echo "Временное отключение существующего сайта novnc..."
     mv /etc/nginx/sites-enabled/novnc /etc/nginx/sites-enabled/novnc.bak
   fi
 
-  # Certificate setup with standalone plugin
+  # Настройка сертификата с использованием плагина standalone
   if ! certbot certificates | grep -q "$HOSTNAME"; then
-    echo "Installing Certbot for Let's Encrypt..."
+    echo "Установка Certbot для Let's Encrypt..."
     apt install -y certbot python3-certbot-nginx
 
-    # Check for /etc/letsencrypt/live directory and create if missing
     if [ ! -d "/etc/letsencrypt/live" ]; then
-      echo "Creating /etc/letsencrypt/live directory..."
+      echo "Создание директории /etc/letsencrypt/live..."
       mkdir -p /etc/letsencrypt/live
       if [ $? -ne 0 ]; then
-        echo "Error: Could not create /etc/letsencrypt/live directory. Please check permissions."
+        echo "Ошибка: не удалось создать директорию /etc/letsencrypt/live. Проверьте права доступа."
         return 1
       fi
     fi
 
-    # Check for /etc/letsencrypt/live/$HOSTNAME directory and create if missing
     if [ ! -d "/etc/letsencrypt/live/$HOSTNAME" ]; then
-      echo "Creating /etc/letsencrypt/live/$HOSTNAME directory..."
+      echo "Создание директории /etc/letsencrypt/live/$HOSTNAME..."
       mkdir -p /etc/letsencrypt/live/$HOSTNAME
       if [ $? -ne 0 ]; then
-        echo "Error: Could not create /etc/letsencrypt/live/$HOSTNAME directory. Please check permissions."
+        echo "Ошибка: не удалось создать директорию /etc/letsencrypt/live/$HOSTNAME. Проверьте права доступа."
         return 1
       fi
     fi
 
-    echo "Obtaining SSL certificate (using standalone plugin)..."
-    systemctl stop nginx # Stop nginx to free up port 80 for standalone
+    echo "Получение SSL-сертификата (используется плагин standalone)..."
+    systemctl stop nginx
     if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME; then
-      echo "Error: Initial attempt to obtain SSL certificate failed."
-      echo "Do you want to automatically retry certificate generation? (y/n)"
+      echo "Ошибка: не удалось получить SSL-сертификат."
+      echo "Хотите автоматически повторить попытку создания сертификата? (y/n)"
       read RETRY_CERT
       RETRY_CERT=${RETRY_CERT:-n}
 
       if [[ "$RETRY_CERT" == "y" ]]; then
-        echo "Retrying certificate generation..."
+        echo "Повторная попытка создания сертификата..."
         if ! certbot certonly --standalone -d $HOSTNAME --non-interactive --agree-tos -m admin@$HOSTNAME --cert-name $HOSTNAME; then
-          echo "Error: Retry attempt failed. Please check the error messages above and try again manually."
+          echo "Ошибка: повторная попытка не удалась. Проверьте сообщения об ошибках и попробуйте вручную."
           return 1
         else
-          echo "SSL certificate successfully obtained on retry."
+          echo "SSL-сертификат успешно получен при повторной попытке."
         fi
       else
-        echo "Skipping certificate retry. Please fix the issue and try again manually."
+        echo "Пропуск повторной попытки. Исправьте проблему и попробуйте снова вручную."
         return 1
       fi
     fi
-    systemctl start nginx # Restart Nginx after obtaining the certificate
+    systemctl start nginx
   else
-    echo "SSL certificate for $HOSTNAME already exists. Skipping Certbot installation."
+    echo "SSL-сертификат для $HOSTNAME уже существует. Пропуск установки Certbot."
   fi
 
-  # Create Nginx configuration file
-  echo "Configuring Nginx..."
+  # Создание конфигурационного файла Nginx
+  echo "Настройка Nginx..."
   cat << EOF > /etc/nginx/sites-available/novnc
 server {
     listen 80;
     server_name $HOSTNAME;
 
-    # Redirect HTTP to HTTPS
+    # Перенаправление HTTP на HTTPS
     return 301 https://$HOSTNAME\$request_uri;
 }
 
@@ -291,111 +286,110 @@ server {
 }
 EOF
 
-  # Enable the site
+  # Активация сайта
   if [ -L /etc/nginx/sites-enabled/novnc.bak ]; then
-    echo "Replacing old novnc site configuration..."
+    echo "Замена старой конфигурации сайта novnc..."
     rm /etc/nginx/sites-enabled/novnc.bak
   fi
   if ! [ -L /etc/nginx/sites-enabled/novnc ]; then
     ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
   fi
 
-  # Ensure Nginx has correct permissions and ownership
+  # Установка правильных прав и владельца для Nginx
   chown -R www-data:www-data /var/lib/nginx
   find /etc/nginx -type d -exec chmod 750 {} \;
   find /etc/nginx -type f -exec chmod 640 {} \;
 
-  # Test configuration and reload Nginx
+  # Проверка конфигурации и перезагрузка Nginx
   if nginx -t; then
     systemctl reload nginx
-    echo "Nginx configuration reloaded successfully."
+    echo "Конфигурация Nginx успешно перезагружена."
   else
-    echo "Error in Nginx configuration. Check with 'nginx -t' for details."
+    echo "Ошибка в конфигурации Nginx. Проверьте с помощью 'nginx -t' для получения подробностей."
     return 1
   fi
 
-  # Enable Nginx to start on boot
+  # Активация Nginx при загрузке
   systemctl enable nginx
 
-  echo "Setting up auto-renewal..."
+  echo "Настройка автоматического обновления сертификатов..."
   if ! grep -q "certbot renew" /etc/crontab; then
     echo "0 3 * * * certbot renew --quiet" >> /etc/crontab
   else
-    echo "Certbot auto-renewal already configured. Skipping crontab setup."
+    echo "Автоматическое обновление Certbot уже настроено. Пропуск настройки crontab."
   fi
 
-  echo "Reverse proxy configuration complete!"
-  echo "Access your Linux desktop securely at: https://$HOSTNAME"
+  echo "Настройка обратного прокси завершена!"
+  echo "Доступ к вашему рабочему столу Linux по защищённому адресу: https://$HOSTNAME"
 }
 
 function fix_nginx_config() {
-  echo "Attempting to fix common Nginx configuration issues..."
+  echo "Попытка исправить распространённые проблемы конфигурации Nginx..."
 
-  # Check if novnc site is enabled
+  # Проверка активации сайта novnc
   if [ ! -L /etc/nginx/sites-enabled/novnc ]; then
-    echo "Enabling novnc site in Nginx..."
+    echo "Активация сайта novnc в Nginx..."
     ln -s /etc/nginx/sites-available/novnc /etc/nginx/sites-enabled/
   else
-    echo "novnc site is already enabled."
+    echo "Сайт novnc уже активирован."
   fi
 
-  # Check if the default site is disabled
+  # Проверка отключения сайта по умолчанию
   if [ -f /etc/nginx/sites-enabled/default ]; then
-    echo "Disabling default Nginx site..."
+    echo "Отключение сайта Nginx по умолчанию..."
     rm /etc/nginx/sites-enabled/default
   fi
 
-  # Check if HTTP to HTTPS redirect is in place
+  # Проверка перенаправления HTTP на HTTPS
   if ! grep -q "return 301 https" /etc/nginx/sites-available/novnc; then
-    echo "Adding HTTP to HTTPS redirect to novnc configuration..."
+    echo "Добавление перенаправления HTTP на HTTPS в конфигурацию novnc..."
     sed -i '/listen 80;/a \    return 301 https://$HOSTNAME$request_uri;' /etc/nginx/sites-available/novnc
   fi
 
-  # Check for SSL certificate paths
+  # Проверка путей SSL-сертификатов
   if ! grep -q "ssl_certificate " /etc/nginx/sites-available/novnc; then
-    echo "SSL certificate paths are missing in novnc configuration. Please ensure they are correctly set."
+    echo "Пути SSL-сертификатов отсутствуют в конфигурации novnc. Убедитесь, что они правильно настроены."
   fi
 
-  # Test Nginx configuration
-  echo "Testing Nginx configuration..."
+  # Проверка конфигурации Nginx
+  echo "Проверка конфигурации Nginx..."
   if nginx -t; then
-    echo "Nginx configuration test successful. Reloading Nginx..."
+    echo "Проверка конфигурации Nginx успешна. Перезагрузка Nginx..."
     systemctl reload nginx
   else
-    echo "Nginx configuration test failed. Please check the configuration manually."
+    echo "Проверка конфигурации Nginx не удалась. Проверьте конфигурацию вручную."
   fi
 
-  echo "Fix attempt completed. Please verify the configuration."
+  echo "Попытка исправления завершена. Проверьте конфигурацию."
 }
 
 function reinstall_nginx_reverse_proxy() {
-  echo "Reinstalling Nginx reverse proxy setup..."
+  echo "Переустановка настройки обратного прокси Nginx..."
 
-  # Stop Nginx and disable novnc site
-  echo "Stopping Nginx and disabling novnc site..."
+  # Остановка Nginx и отключение сайта novnc
+  echo "Остановка Nginx и отключение сайта novnc..."
   systemctl stop nginx
   if [ -L /etc/nginx/sites-enabled/novnc ]; then
     rm /etc/nginx/sites-enabled/novnc
   fi
 
-  echo "Removing existing Nginx configuration and Certbot certificates..."
+  echo "Удаление существующей конфигурации Nginx и сертификатов Certbot..."
   rm -f /etc/nginx/sites-available/novnc
   certbot delete --cert-name "$HOSTNAME" --non-interactive
 
-
-  echo "Reconfiguring Nginx reverse proxy..."
+  echo "Повторная настройка обратного прокси Nginx..."
   configure_nginx_reverse_proxy
 }
 
 function main_menu() {
   while true; do
-    echo "Choose an option:"
-    echo "1) Install noVNC with TigerVNC and XFCE4"
-    echo "2) Configure Nginx reverse proxy with Let's Encrypt"
-    echo "3) Fix Nginx Configuration"
-    echo "4) Reinstall Nginx Reverse Proxy Setup"
-    echo "5) Exit"
-    read -p "Enter your choice: " choice
+    echo "Выберите опцию:"
+    echo "1) Установить noVNC с TigerVNC и XFCE4"
+    echo "2) Настроить обратный прокси Nginx с Let's Encrypt"
+    echo "3) Исправить конфигурацию Nginx"
+    echo "4) Переустановить настройку обратного прокси Nginx"
+    echo "5) Выход"
+    read -p "Введите ваш выбор: " choice
 
     case $choice in
     1)
@@ -414,7 +408,7 @@ function main_menu() {
       exit 0
       ;;
     *)
-      echo "Invalid choice, please try again."
+      echo "Неверный выбор, попробуйте снова."
       ;;
     esac
   done
