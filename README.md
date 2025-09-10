@@ -1,50 +1,73 @@
-# noVNC + TigerVNC + XFCE4 + Nginx Reverse Proxy + HTTP Basic Auth Installer
+# noVNC + TigerVNC + XFCE4 + Nginx Reverse Proxy + HTTP Basic Auth Установщик
 
-> A streamlined setup for a remote desktop environment on your Ubuntu server (and other Debian based like Kali linux).
+Упрощенная настройка удалённого рабочего стола на вашем сервере Ubuntu
+(и других на базе Debian, таких как Kali Linux).
 
-This script combines the power of **TigerVNC**, **noVNC**, and **XFCE4**, with an optional, secure **Nginx** reverse proxy powered by **Let's Encrypt** SSL certificates, to create a fully functional remote desktop environment.
+Этот скрипт объединяет возможности **TigerVNC**, **noVNC** и **XFCE4**,
+с дополнительным и безопасным обратным прокси на базе **Nginx**,
+использующего SSL-сертификаты **Let's Encrypt**, чтобы создать полностью
+функциональную среду удалённого рабочего стола.
 
-## ✨ Features
+## ✨ Особенности
 
-*   **Effortless Installation:** Automates the installation and configuration of TigerVNC, noVNC, and the lightweight XFCE4 desktop environment.
-*   **Secure Access:** Optionally configures an Nginx reverse proxy with automatic SSL certificate generation and renewal via Let's Encrypt.
-*   **HTTP Basic Authentication:** Provides an extra layer of security with optional HTTP Basic Authentication for your reverse proxy.
-*   **Customizable:** Allows you to specify the VNC user, ports, display number, and hostname during setup.
-*   **Troubleshooting Utilities:** Offers functions to help fix common Nginx configuration issues and reinstall the reverse proxy setup if needed.
+-   Простая установка: автоматизирует установку и настройку TigerVNC,
+    noVNC и лёгкой среды рабочего стола XFCE4.
+-   Безопасный доступ: при необходимости настраивает обратный прокси
+    Nginx с автоматической генерацией и обновлением SSL-сертификатов
+    через Let's Encrypt.
+-   HTTP Basic Authentication: обеспечивает дополнительный уровень
+    безопасности с помощью опциональной HTTP-аутентификации для
+    обратного прокси.
+-   Гибкость: позволяет указать пользователя VNC, порты, номер дисплея и
+    имя хоста во время настройки.
+-   Инструменты устранения неполадок: предлагает функции для исправления
+    распространённых проблем с конфигурацией Nginx и переустановки
+    обратного прокси при необходимости.
 
-## 🚀 Quick Start
+## 🚀 Быстрый старт
 
-    git clone https://github.com/vtstv/novnc-install.git && cd novnc-install && chmod +x novnc-install.sh && sudo ./novnc-install.sh
+``` bash
+git clone https://github.com/lp85d/novnc-install.git && cd novnc-install && chmod +x novnc-install.sh && sudo ./novnc-install.sh
+```
 
+## 🛠️ Использование
 
-## 🛠️ Usage
+Скрипт предоставляет интерактивное меню, которое проведёт вас через
+процесс установки и настройки. Вы можете выбрать:
 
-The script provides an interactive menu to guide you through the installation and configuration process. You can choose to:
+1.  Установить noVNC с TigerVNC и XFCE4.
+2.  Настроить обратный прокси Nginx с SSL от Let's Encrypt.
+3.  Исправить распространённые проблемы конфигурации Nginx.
+4.  Переустановить обратный прокси Nginx.
 
-1. Install noVNC with TigerVNC and XFCE4.
-2. Configure an Nginx reverse proxy with Let's Encrypt SSL.
-3. Fix common Nginx configuration problems.
-4. Reinstall the Nginx reverse proxy setup.
+## Пример работы Kali Linux в облаке AWS:
 
-## An example of Kali linux running in the AWS cloud:
+![Скриншот доступен в оригинальном
+репозитории](https://github.com/user-attachments/assets/895f3f5d-1def-42a8-a056-596769f37418)
 
-<img src="https://github.com/user-attachments/assets/895f3f5d-1def-42a8-a056-596769f37418" style="width:80%;">
+## 🔒 Заметка о безопасности
 
+**Всегда** используйте надёжные и уникальные пароли для вашего
+пользователя VNC и HTTP Basic Authentication.
 
-## 🔒 Security Note
+## 🤝 Вклад
 
-**Always** use strong and unique passwords for your VNC user and HTTP Basic Authentication.
+Вклад приветствуется! Вы можете помочь развитию проекта, отправляя pull
+request или сообщая о проблемах в [репозитории
+GitHub](https://github.com/lp85d/novnc-install).
 
-## 🤝 Contribution
+## 📝 Лицензия
 
-Contributions are welcome! Feel free to contribute to this project by submitting pull requests or reporting issues on the [GitHub repository](https://github.com/vtstv/novnc-install).
+Этот проект лицензирован по лицензии MIT - см. файл [LICENSE](LICENSE)
+для подробностей.
 
-## 📝 License
+------------------------------------------------------------------------
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
+```{=html}
 <p align="center">
-  <strong>Enjoy your new remote desktop!</strong> ✨
+```
+`<strong>`{=html}Наслаждайтесь вашим новым удалённым рабочим
+столом!`</strong>`{=html} ✨
+```{=html}
 </p>
+```
