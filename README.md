@@ -27,7 +27,7 @@
 ## 🚀 Быстрый старт
 
 ``` bash
-git clone https://github.com/lp85d/novnc-install.git && cd novnc-install && chmod +x novnc-install.sh && sudo ./novnc-install.sh
+git clone https://github.com/lp85d/novnc-install.git && cd novnc-install && chmod +x novnc-install.sh && ./novnc-install.sh
 ```
 
 ## 🛠️ Использование
