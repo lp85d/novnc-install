@@ -43,7 +43,8 @@ git clone https://github.com/lp85d/novnc-install.git && cd novnc-install && chmo
 ## Пример работы Kali Linux в облаке AWS:
 
 ![Скриншот доступен в оригинальном
-репозитории](https://github.com/user-attachments/assets/895f3f5d-1def-42a8-a056-596769f37418)
+репозитории](https://github.com/user-attachments/assets/706ecb41-39cd-493d-a082-e9bb3dce5dbe)
+
 
 ## 🔒 Заметка о безопасности
 
