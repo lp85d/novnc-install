@@ -193,6 +193,7 @@ function configure_nginx_reverse_proxy() {
     htpasswd -bc /etc/nginx/.htpasswd "$AUTH_USER" "$AUTH_PASSWORD"
     chmod 640 /etc/nginx/.htpasswd
     chown root:www-data /etc/nginx/.htpasswd
+    chmod 750 /etc/nginx
 
     AUTH_CONFIG="
         auth_basic \"Ограниченный доступ\";
