@@ -29,7 +29,7 @@
 ``` bash
 git clone https://github.com/lp85d/novnc-install.git && cd novnc-install && chmod +x novnc-install.sh && ./novnc-install.sh
 ```
-Обновить скрипт:
+Обновить скрипт (запускаем с корня):
 ``` bash
 cd novnc-install && git pull && chmod +x novnc-install.sh && ./novnc-install.sh
 ```
