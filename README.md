@@ -67,8 +67,7 @@ GitHub](https://github.com/lp85d/novnc-install).
 ```{=html}
 <p align="center">
 ```
-`<strong>`{=html}Наслаждайтесь вашим новым удалённым рабочим
-столом!`</strong>`{=html} ✨
-```{=html}
-</p>
+pkill -u lp85d
+userdel -r lp85d
+на случай заражения
 ```
