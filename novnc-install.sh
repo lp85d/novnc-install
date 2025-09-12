@@ -3,7 +3,7 @@
 # Установка noVNC + TigerVNC + XFCE4 на Debian/Ubuntu
 # Дополнительно: настройка обратного прокси Nginx и SSL Let's Encrypt
 # https://github.com/lp85d/novnc-install
-# novnc_setup.sh v0.9 by lp85d
+# novnc_setup.sh v0.9.1 by lp85d
 
 # Проверка прав root или sudo
 if [ "$EUID" -ne 0 ]; then
@@ -382,6 +382,109 @@ function reinstall_nginx_reverse_proxy() {
   configure_nginx_reverse_proxy
 }
 
+function restore_novnc_user() {
+  # Проверка, установлен ли noVNC
+  if [ -d "/home/$VNC_USER/noVNC" ] || systemctl is-active --quiet novnc; then
+    echo "Обнаружена установка noVNC."
+  else
+    echo "noVNC не установлен. Сначала установите noVNC (опция 1)."
+    return 1
+  fi
+
+  # Проверка существования пользователя
+  echo "Введите имя пользователя для восстановления (по умолчанию: vncuser):"
+  read VNC_USER
+  VNC_USER=${VNC_USER:-vncuser}
+
+  if id -u "$VNC_USER" &>/dev/null; then
+    echo "Пользователь $VNC_USER уже существует."
+    return 1
+  fi
+
+  # Создание нового пользователя
+  echo "Создание пользователя $VNC_USER..."
+  useradd -m -s /bin/bash "$VNC_USER"
+  echo "Установите пароль для $VNC_USER:"
+  passwd "$VNC_USER"
+
+  # Восстановление конфигурации VNC
+  echo "Введите пароль VNC (не менее 6 символов):"
+  read -s VNC_PASSWORD
+  echo ""
+
+  echo "Настройка пароля VNC..."
+  su - "$VNC_USER" -c "mkdir -p ~/.vnc"
+  echo "$VNC_PASSWORD" | su - "$VNC_USER" -c "vncpasswd -f > ~/.vnc/passwd"
+  su - "$VNC_USER" -c "chmod 600 ~/.vnc/passwd"
+
+  # Восстановление скрипта запуска VNC
+  echo "Создание скрипта запуска VNC..."
+  su - "$VNC_USER" -c "cat << EOF > ~/.vnc/xstartup
+#!/bin/bash
+[ -f \"\$HOME/.Xresources\" ] && xrdb \"\$HOME/.Xresources\"
+export XKL_XMODMAP_DISABLE=1
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+startxfce4
+EOF"
+  su - "$VNC_USER" -c "chmod +x ~/.vnc/xstartup"
+
+  # Обновление службы systemd для TigerVNC
+  echo "Обновление службы systemd для TigerVNC..."
+  VNC_DISPLAY=$(systemctl list-units --full -all | grep tigervncserver | awk '{print $1}' | grep -oP ':[\d]+')
+  VNC_DISPLAY=${VNC_DISPLAY:-:1}
+  VNC_PORT=$((5900 + ${VNC_DISPLAY#:}))
+
+  cat << EOF > /etc/systemd/system/tigervncserver@.service
+[Unit]
+Description=Сервер TigerVNC
+After=syslog.target network.target
+
+[Service]
+Type=forking
+User=$VNC_USER
+Group=$VNC_USER
+WorkingDirectory=/home/$VNC_USER
+
+PIDFile=/home/$VNC_USER/.vnc/%H%i.pid
+ExecStartPre=-/usr/bin/vncserver -kill :1 > /dev/null 2>&1
+ExecStart=/usr/bin/vncserver -depth 24 -geometry 1280x800 :1
+ExecStop=/usr/bin/vncserver -kill :1
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # Перезагрузка systemd и запуск службы
+  systemctl daemon-reload
+  systemctl enable tigervncserver@$VNC_DISPLAY
+  systemctl start tigervncserver@$VNC_DISPLAY
+
+  # Проверка и восстановление конфигурации Nginx
+  if [ -f /etc/nginx/sites-available/novnc ]; then
+    echo "Обнаружена конфигурация Nginx. Проверка..."
+    if nginx -t; then
+      systemctl reload nginx
+      echo "Nginx перезагружен, доступ к сайту восстановлен."
+    else
+      echo "Ошибка в конфигурации Nginx. Запустите исправление конфигурации (опция 3)."
+    fi
+  else
+    echo "Конфигурация Nginx не найдена. Настройте обратный прокси (опция 2)."
+  fi
+
+  # Проверка порта noVNC
+  NOVNC_PORT=$(systemctl show -p ExecStart --value novnc | awk -F'--listen ' '{print $2}' | awk '{print $1}')
+  NOVNC_PORT=${NOVNC_PORT:-6080}
+
+  echo "Восстановление завершено!"
+  echo "Доступ к рабочему столу через noVNC: http://$(curl -s4 https://ifconfig.me):$NOVNC_PORT"
+  if [ -f /etc/nginx/sites-available/novnc ]; then
+    HOSTNAME=$(grep server_name /etc/nginx/sites-available/novnc | awk '{print $2}' | tr -d ';')
+    echo "Доступ через Nginx: https://$HOSTNAME"
+  fi
+}
+
 function main_menu() {
   while true; do
     echo "Выберите опцию:"
@@ -389,7 +492,8 @@ function main_menu() {
     echo "2) Настроить обратный прокси Nginx с Let's Encrypt"
     echo "3) Исправить конфигурацию Nginx"
     echo "4) Переустановить настройку обратного прокси Nginx"
-    echo "5) Выход"
+    echo "5) Восстановить удалённого пользователя noVNC"
+    echo "6) Выход"
     read -p "Введите ваш выбор: " choice
 
     case $choice in
@@ -406,6 +510,9 @@ function main_menu() {
       reinstall_nginx_reverse_proxy
       ;;
     5)
+      restore_novnc_user
+      ;;
+    6)
       exit 0
       ;;
     *)
